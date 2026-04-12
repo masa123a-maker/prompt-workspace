@@ -1,5 +1,4 @@
 "use client";
-
 import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Sparkles, Dice5, RotateCcw, History, Check, Copy, Search, Wand2 } from "lucide-react";
@@ -26,7 +25,6 @@ const STORAGE_KEYS = {
   manualHistory: "prompt-generator-manual-history-v2",
   trendHistory: "prompt-generator-trend-history-v2",
   activeTab: "prompt-generator-active-tab-v2",
-  importedTrendOptions: "prompt-generator-imported-trend-options-v1",
 };
 
 const OPTION_GROUPS = {
@@ -384,58 +382,6 @@ function runSelfTests() {
   return failures;
 }
 
-function normalizeImportedOptions(raw) {
-  const allowedKeys = ["hair", "makeup", "wear", "accessory", "background", "mood"];
-  const normalized = {
-    hair: [],
-    makeup: [],
-    wear: [],
-    accessory: [],
-    background: [],
-    mood: [],
-  };
-
-  for (const key of allowedKeys) {
-    const items = Array.isArray(raw?.[key]) ? raw[key] : [];
-    normalized[key] = items
-      .map((item, index) => {
-        if (!item || typeof item !== "object") return null;
-        const label = typeof item.label === "string" ? item.label.trim() : "";
-        const en = typeof item.en === "string" ? item.en.trim() : "";
-        if (!label || !en) return null;
-        return {
-          id: item.id || `imported-${key}-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
-          label,
-          en,
-          imported: true,
-        };
-      })
-      .filter(Boolean);
-  }
-
-  return normalized;
-}
-
-function mergeOptions(baseOptions, importedOptions) {
-  const merged = {};
-  for (const key of Object.keys(baseOptions)) {
-    const base = baseOptions[key].options || [];
-    const extra = importedOptions[key] || [];
-    const seen = new Set();
-    const combined = [...base, ...extra].filter((item) => {
-      const sig = `${item.label}__${item.en}`;
-      if (seen.has(sig)) return false;
-      seen.add(sig);
-      return true;
-    });
-    merged[key] = {
-      ...baseOptions[key],
-      options: combined,
-    };
-  }
-  return merged;
-}
-
 function SelectionChip({ active, onClick, children }) {
   return (
     <button
@@ -495,35 +441,6 @@ function CopyStatus({ state, manualText }) {
 
 function ManualPromptApp() {
   const [selection, setSelection] = useState({});
-  const [importedOptions, setImportedOptions] = useState({
-    hair: [],
-    makeup: [],
-    wear: [],
-    accessory: [],
-    background: [],
-    mood: [],
-  });
-  const [importText, setImportText] = useState(`{
-  "hair": [
-    { "label": "軽いレイヤーボブ", "en": "a light layered bob with airy movement" }
-  ],
-  "makeup": [
-    { "label": "透け感ツヤ肌", "en": "sheer luminous makeup with translucent glowing skin" }
-  ],
-  "wear": [
-    { "label": "シアー素材の軽羽織", "en": "a sheer light outer layer with soft translucency" }
-  ],
-  "accessory": [
-    { "label": "ミニマルなシルバーピアス", "en": "minimal silver earrings with a clean modern accent" }
-  ],
-  "background": [
-    { "label": "新緑の表参道", "en": "Omotesando lined with fresh spring greenery and refined storefronts" }
-  ],
-  "mood": [
-    { "label": "都会的でみずみずしい", "en": "urban, fresh, and quietly sophisticated" }
-  ]
-}`);
-  const [importStatus, setImportStatus] = useState("idle");
   const [output, setOutput] = useState("");
   const [history, setHistory] = useState([]);
   const [copyState, setCopyState] = useState("idle");
@@ -531,27 +448,12 @@ function ManualPromptApp() {
 
   useEffect(() => {
     setHistory(safeStorageGet(STORAGE_KEYS.manualHistory, []));
-    setImportedOptions(
-      safeStorageGet(STORAGE_KEYS.importedTrendOptions, {
-        hair: [],
-        makeup: [],
-        wear: [],
-        accessory: [],
-        background: [],
-        mood: [],
-      })
-    );
   }, []);
 
   useEffect(() => {
     safeStorageSet(STORAGE_KEYS.manualHistory, history);
   }, [history]);
 
-  useEffect(() => {
-    safeStorageSet(STORAGE_KEYS.importedTrendOptions, importedOptions);
-  }, [importedOptions]);
-
-  const mergedOptionGroups = useMemo(() => mergeOptions(OPTION_GROUPS, importedOptions), [importedOptions]);
   const selectedCount = useMemo(() => countSelected(selection), [selection]);
   const canGenerate = selectedCount >= 3;
   const selectedSeason = selection.season;
@@ -561,7 +463,7 @@ function ManualPromptApp() {
       const next = { ...prev, [groupKey]: prev[groupKey] === optionId ? undefined : optionId };
       if (groupKey === "season") {
         for (const dep of ["wear", "background"]) {
-          const current = mergedOptionGroups[dep].options.find((o) => o.id === next[dep]);
+          const current = OPTION_GROUPS[dep].options.find((o) => o.id === next[dep]);
           if (current?.seasons && !current.seasons.includes(optionId)) next[dep] = undefined;
         }
       }
@@ -569,64 +471,10 @@ function ManualPromptApp() {
     });
   };
 
-  const importTrendOptions = () => {
-    try {
-      const parsed = JSON.parse(importText);
-      const normalized = normalizeImportedOptions(parsed);
-      setImportedOptions((prev) => ({
-        hair: [...prev.hair, ...normalized.hair],
-        makeup: [...prev.makeup, ...normalized.makeup],
-        wear: [...prev.wear, ...normalized.wear],
-        accessory: [...prev.accessory, ...normalized.accessory],
-        background: [...prev.background, ...normalized.background],
-        mood: [...prev.mood, ...normalized.mood],
-      }));
-      setImportStatus("success");
-      window.setTimeout(() => setImportStatus("idle"), 1500);
-    } catch {
-      setImportStatus("error");
-    }
-  };
-
-  const clearImportedOptions = () => {
-    setImportedOptions({
-      hair: [],
-      makeup: [],
-      wear: [],
-      accessory: [],
-      background: [],
-      mood: [],
-    });
-    setImportStatus("idle");
-  };
-
   const saveEntry = (entry) => setHistory((prev) => [entry, ...prev].slice(0, 20));
 
   const generatePrompt = () => {
-    const prompt = (() => {
-      const picked = {};
-      for (const key of GROUP_ORDER) {
-        const item = mergedOptionGroups[key].options.find((o) => o.id === selection[key]);
-        if (item) picked[key] = item;
-      }
-      const parts = [
-        "A naturally beautiful woman portrayed with refined realism and emotional subtlety.",
-        picked.season ? `Set in ${picked.season.en},` : "",
-        picked.hair?.en,
-        picked.makeup?.en,
-        picked.wear?.en,
-        picked.accessory?.en,
-        picked.pose?.en,
-        picked.background?.en,
-        picked.mood?.en,
-        picked.lighting?.en,
-        "highly detailed, elegant composition, realistic texture, graceful atmosphere, cinematic fashion photography",
-      ].filter(Boolean);
-      const videoHint = VIDEO_HINTS[picked.pose?.id] || VIDEO_HINTS.default;
-      return `${parts.join(", ")}.
-
---video_hint: ${videoHint}`;
-    })();
+    const prompt = buildPrompt(selection);
     setOutput(prompt);
     setCopyState("idle");
     saveEntry({ id: createId(), createdAt: new Date().toLocaleString("ja-JP"), selection, prompt });
@@ -676,33 +524,9 @@ function ManualPromptApp() {
             </div>
           </CardHeader>
           <CardContent className="space-y-8">
-            <section className="space-y-3 rounded-2xl bg-zinc-50 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-semibold">トレンド候補インポート</h3>
-                  <p className="text-sm text-zinc-600">ChatGPTで作ったJSONを貼り付けて、選択肢に追加します。</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Badge>固定 + 追加候補</Badge>
-                  <Badge>保存されます</Badge>
-                </div>
-              </div>
-              <textarea
-                value={importText}
-                onChange={(e) => setImportText(e.target.value)}
-                className="min-h-[220px] w-full rounded-2xl border border-zinc-200 bg-white p-3 text-xs leading-6 text-zinc-800"
-              />
-              <div className="flex flex-wrap gap-3">
-                <Button onClick={importTrendOptions} className="rounded-2xl">追加する</Button>
-                <Button onClick={clearImportedOptions} className="rounded-2xl">追加候補を全消去</Button>
-              </div>
-              {importStatus === "success" ? <div className="text-sm text-zinc-600">追加しました。</div> : null}
-              {importStatus === "error" ? <div className="text-sm text-red-600">JSON形式を確認してください。</div> : null}
-            </section>
-
             {GROUP_ORDER.map((groupKey) => {
-              const group = mergedOptionGroups[groupKey];
-              const options = group.options.filter((opt) => !opt.seasons || !selectedSeason || opt.seasons.includes(selectedSeason));
+              const group = OPTION_GROUPS[groupKey];
+              const options = compatibleOptions(groupKey, selectedSeason);
               return (
                 <section key={groupKey} className="space-y-3">
                   <div className="flex items-center gap-3">
@@ -711,12 +535,9 @@ function ManualPromptApp() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {options.map((opt) => (
-                      <div key={opt.id} className="flex items-center gap-1">
-                        <SelectionChip active={selection[groupKey] === opt.id} onClick={() => toggleSelection(groupKey, opt.id)}>
-                          {opt.label}
-                        </SelectionChip>
-                        {opt.imported ? <Badge>Trend</Badge> : null}
-                      </div>
+                      <SelectionChip key={opt.id} active={selection[groupKey] === opt.id} onClick={() => toggleSelection(groupKey, opt.id)}>
+                        {opt.label}
+                      </SelectionChip>
                     ))}
                   </div>
                 </section>
