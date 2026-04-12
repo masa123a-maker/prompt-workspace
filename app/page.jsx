@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Sparkles, Dice5, RotateCcw, History, Check, Copy, Search, Wand2 } from "lucide-react";
+import { Sparkles, Dice5, RotateCcw, History, Check, Copy, Search, Wand2, Save, Trash2, Upload } from "lucide-react";
 
 // --- Simple UI replacements (no shadcn needed) ---
 const Card = ({ children, className }) => <div className={`bg-white rounded-3xl shadow-sm p-4 ${className || ""}`}>{children}</div>;
@@ -27,6 +27,7 @@ const STORAGE_KEYS = {
   trendHistory: "prompt-generator-trend-history-v2",
   activeTab: "prompt-generator-active-tab-v2",
   importedTrendOptions: "prompt-generator-imported-trend-options-v1",
+  savedTrendSets: "prompt-generator-saved-trend-sets-v1",
 };
 
 const OPTION_GROUPS = {
@@ -524,6 +525,8 @@ function ManualPromptApp() {
   ]
 }`);
   const [importStatus, setImportStatus] = useState("idle");
+  const [savedTrendSets, setSavedTrendSets] = useState([]);
+  const [trendSetName, setTrendSetName] = useState("");
   const [output, setOutput] = useState("");
   const [history, setHistory] = useState([]);
   const [copyState, setCopyState] = useState("idle");
@@ -541,6 +544,7 @@ function ManualPromptApp() {
         mood: [],
       })
     );
+    setSavedTrendSets(safeStorageGet(STORAGE_KEYS.savedTrendSets, []));
   }, []);
 
   useEffect(() => {
@@ -550,6 +554,10 @@ function ManualPromptApp() {
   useEffect(() => {
     safeStorageSet(STORAGE_KEYS.importedTrendOptions, importedOptions);
   }, [importedOptions]);
+
+  useEffect(() => {
+    safeStorageSet(STORAGE_KEYS.savedTrendSets, savedTrendSets);
+  }, [savedTrendSets]);
 
   const mergedOptionGroups = useMemo(() => mergeOptions(OPTION_GROUPS, importedOptions), [importedOptions]);
   const selectedCount = useMemo(() => countSelected(selection), [selection]);
@@ -598,6 +606,54 @@ function ManualPromptApp() {
       mood: [],
     });
     setImportStatus("idle");
+  };
+
+  const saveTrendSet = () => {
+    try {
+      const parsed = JSON.parse(importText);
+      const normalized = normalizeImportedOptions(parsed);
+      const name = trendSetName.trim() || `Trend Set ${new Date().toLocaleString("ja-JP")}`;
+      const hasAny = Object.values(normalized).some((arr) => Array.isArray(arr) && arr.length > 0);
+      if (!hasAny) {
+        setImportStatus("error");
+        return;
+      }
+      const entry = {
+        id: createId(),
+        name,
+        createdAt: new Date().toLocaleString("ja-JP"),
+        data: normalized,
+        rawText: importText,
+      };
+      setSavedTrendSets((prev) => [entry, ...prev].slice(0, 20));
+      setImportStatus("saved");
+      window.setTimeout(() => setImportStatus("idle"), 1500);
+    } catch {
+      setImportStatus("error");
+    }
+  };
+
+  const loadTrendSet = (setItem) => {
+    setTrendSetName(setItem.name);
+    setImportText(setItem.rawText || JSON.stringify(setItem.data, null, 2));
+    setImportStatus("idle");
+  };
+
+  const applySavedTrendSet = (setItem) => {
+    setImportedOptions((prev) => ({
+      hair: [...prev.hair, ...(setItem.data?.hair || [])],
+      makeup: [...prev.makeup, ...(setItem.data?.makeup || [])],
+      wear: [...prev.wear, ...(setItem.data?.wear || [])],
+      accessory: [...prev.accessory, ...(setItem.data?.accessory || [])],
+      background: [...prev.background, ...(setItem.data?.background || [])],
+      mood: [...prev.mood, ...(setItem.data?.mood || [])],
+    }));
+    setImportStatus("success");
+    window.setTimeout(() => setImportStatus("idle"), 1500);
+  };
+
+  const deleteTrendSet = (id) => {
+    setSavedTrendSets((prev) => prev.filter((item) => item.id !== id));
   };
 
   const saveEntry = (entry) => setHistory((prev) => [entry, ...prev].slice(0, 20));
@@ -687,17 +743,38 @@ function ManualPromptApp() {
                   <Badge>保存されます</Badge>
                 </div>
               </div>
+              <Input value={trendSetName} onChange={(e) => setTrendSetName(e.target.value)} placeholder="保存名 例：2026年5月初め 東京トレンド" />
               <textarea
                 value={importText}
                 onChange={(e) => setImportText(e.target.value)}
                 className="min-h-[220px] w-full rounded-2xl border border-zinc-200 bg-white p-3 text-xs leading-6 text-zinc-800"
               />
               <div className="flex flex-wrap gap-3">
-                <Button onClick={importTrendOptions} className="rounded-2xl">追加する</Button>
+                <Button onClick={importTrendOptions} className="rounded-2xl"><Upload className="mr-2 inline h-4 w-4" />追加する</Button>
+                <Button onClick={saveTrendSet} className="rounded-2xl"><Save className="mr-2 inline h-4 w-4" />保存する</Button>
                 <Button onClick={clearImportedOptions} className="rounded-2xl">追加候補を全消去</Button>
               </div>
               {importStatus === "success" ? <div className="text-sm text-zinc-600">追加しました。</div> : null}
+              {importStatus === "saved" ? <div className="text-sm text-zinc-600">保存しました。</div> : null}
               {importStatus === "error" ? <div className="text-sm text-red-600">JSON形式を確認してください。</div> : null}
+              <div className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-3">
+                <div className="text-sm font-medium">保存済みトレンド</div>
+                {savedTrendSets.length === 0 ? <div className="text-sm text-zinc-500">まだ保存はありません。</div> : savedTrendSets.map((item) => (
+                  <div key={item.id} className="rounded-2xl bg-zinc-50 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium">{item.name}</div>
+                        <div className="text-xs text-zinc-500">{item.createdAt}</div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button onClick={() => loadTrendSet(item)} className="rounded-xl">読み込む</Button>
+                        <Button onClick={() => applySavedTrendSet(item)} className="rounded-xl">追加</Button>
+                        <Button onClick={() => deleteTrendSet(item.id)} className="rounded-xl"><Trash2 className="h-4 w-4" /></Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </section>
 
             {GROUP_ORDER.map((groupKey) => {
