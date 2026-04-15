@@ -728,51 +728,56 @@ function ManualPromptApp() {
 
   const saveEntry = (entry) => setHistory((prev) => [entry, ...prev].slice(0, 20));
 
- const generatePrompt = () => {
+const generatePrompt = () => {
   const picked = {};
   for (const key of GROUP_ORDER) {
     const item = mergedOptionGroups[key].options.find((o) => o.id === selection[key]);
     if (item) picked[key] = item;
   }
 
-  const standardParts = [
-    "A naturally beautiful woman",
-    picked.season ? `in ${picked.season.en}` : "",
-    picked.hair?.en,
-    picked.makeup?.en,
-    picked.wear?.en,
-    picked.accessory?.en,
-    picked.pose?.en,
-    picked.background?.en,
-    picked.mood?.en,
-    picked.lighting?.en,
-    simplifyCameraText(picked.camera?.en),
-    simplifyStyleText(picked.style?.en),
-    "realistic, highly detailed fashion photography",
-  ].filter(Boolean);
+  const isStandard = promptMode === "standard";
 
-  const creativeParts = [
-    "A naturally beautiful woman portrayed with refined realism and emotional subtlety.",
-    picked.season ? `Set in ${picked.season.en},` : "",
+  const parts = [
+    "A naturally beautiful woman",
+
+    picked.season ? `in ${picked.season.en},` : "",
     picked.hair?.en,
     picked.makeup?.en,
     picked.wear?.en,
     picked.accessory?.en,
     picked.pose?.en,
     picked.background?.en,
-    picked.mood?.en,
-    picked.lighting?.en,
-    picked.camera?.en,
-    picked.style?.en,
-    "highly detailed, elegant composition, realistic texture, graceful atmosphere, cinematic fashion photography",
+
+    // ▼ここが分岐
+    isStandard
+      ? "natural, realistic, clean fashion photography"
+      : picked.mood?.en,
+
+    isStandard
+      ? "soft natural lighting"
+      : picked.lighting?.en,
+
+    isStandard
+      ? "shot with a natural perspective lens"
+      : picked.camera?.en,
+
+    isStandard
+      ? ""
+      : picked.style?.en,
+
+    // ▼ここも分岐
+    isStandard
+      ? "realistic, minimal composition"
+      : "highly detailed, elegant composition, cinematic fashion photography",
   ].filter(Boolean);
 
   const videoHint = VIDEO_HINTS[picked.pose?.id] || VIDEO_HINTS.default;
-  const promptBody = promptMode === "standard" ? standardParts.join(", ") : creativeParts.join(", ");
-  const prompt = `${promptBody}.\n\n--video_hint: ${videoHint}`;
+
+  const prompt = `${parts.join(", ")}.\n\n--video_hint: ${videoHint}`;
 
   setOutput(prompt);
   setCopyState("idle");
+
   saveEntry({
     id: createId(),
     createdAt: new Date().toLocaleString("ja-JP"),
