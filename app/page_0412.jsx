@@ -31,22 +31,6 @@ const STORAGE_KEYS = {
 };
 
 const OPTION_GROUPS = {
-  camera: {
-    label: "カメラ",
-    options: [
-      { id: "portrait-85", label: "85mm ポートレート", en: "shot on a full-frame mirrorless camera, 85mm portrait lens, f/1.8 aperture, shallow depth of field, natural bokeh" },
-      { id: "street-35", label: "35mm ストリート", en: "shot with a 35mm lens, natural perspective, environmental portrait framing, realistic street depth" },
-      { id: "cinematic-135", label: "135mm シネマ", en: "shot with a 135mm telephoto lens, strong background compression, cinematic separation, elegant depth" },
-    ],
-  },
-  style: {
-    label: "作品感",
-    options: [
-      { id: "editorial", label: "ファッション誌風", en: "editorial fashion photography with refined storytelling depth" },
-      { id: "cinematic-moment", label: "映画的瞬間", en: "captured in a fleeting cinematic moment, with quiet narrative and emotional stillness" },
-      { id: "meditative", label: "静かな余韻", en: "a quiet, almost meditative atmosphere, subtle tranquility, inner calm, a sense of time gently slowing down" },
-    ],
-  },
   season: {
     label: "季節",
     options: [
@@ -132,7 +116,7 @@ const OPTION_GROUPS = {
   },
 };
 
-const GROUP_ORDER = ["season", "hair", "makeup", "wear", "accessory", "pose", "background", "mood", "lighting", "camera", "style"];
+const GROUP_ORDER = ["season", "hair", "makeup", "wear", "accessory", "pose", "background", "mood", "lighting"];
 
 const VIDEO_HINTS = {
   walking: "she continues in one unbroken motion, her steps naturally flowing forward as fabric and hair respond to the air",
@@ -285,8 +269,6 @@ function buildPrompt(selection) {
     picked.background?.en,
     picked.mood?.en,
     picked.lighting?.en,
-        picked.camera?.en,
-        picked.style?.en,
     "highly detailed, elegant composition, realistic texture, graceful atmosphere, cinematic fashion photography",
   ].filter(Boolean);
 
@@ -377,7 +359,7 @@ async function copyTextToClipboard(text) {
 function runSelfTests() {
   const failures = [];
 
-  if (countSelected({ season: "spring", hair: "soft-bob", mood: "poetic", camera: "portrait-85" }) !== 4) {
+  if (countSelected({ season: "spring", hair: "soft-bob", mood: "poetic" }) !== 3) {
     failures.push("countSelected should count truthy selections");
   }
 
@@ -390,7 +372,7 @@ function runSelfTests() {
     failures.push("compatibleOptions should filter seasonal backgrounds");
   }
 
-  const prompt = buildPrompt({ season: "spring", pose: "walking", mood: "poetic", camera: "portrait-85", style: "editorial" });
+  const prompt = buildPrompt({ season: "spring", pose: "walking", mood: "poetic" });
   if (!prompt.includes("--video_hint:") || !prompt.includes("Set in spring")) {
     failures.push("buildPrompt should include season and video hint");
   }
@@ -694,8 +676,6 @@ function ManualPromptApp() {
         picked.background?.en,
         picked.mood?.en,
         picked.lighting?.en,
-        picked.camera?.en,
-        picked.style?.en,
         "highly detailed, elegant composition, realistic texture, graceful atmosphere, cinematic fashion photography",
       ].filter(Boolean);
       const videoHint = VIDEO_HINTS[picked.pose?.id] || VIDEO_HINTS.default;
