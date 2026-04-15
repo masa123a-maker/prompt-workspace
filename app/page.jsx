@@ -29,6 +29,7 @@ const STORAGE_KEYS = {
   importedTrendOptions: "prompt-generator-imported-trend-options-v1",
   savedTrendSets: "prompt-generator-saved-trend-sets-v1",
   promptMode: "prompt-generator-prompt-mode-v1",
+  freshMode: "prompt-generator-fresh-mode-v1",
 };
 
 const OPTION_GROUPS = {
@@ -592,6 +593,7 @@ function ManualPromptApp() {
   const [savedTrendSets, setSavedTrendSets] = useState([]);
   const [trendSetName, setTrendSetName] = useState("");
   const [promptMode, setPromptMode] = useState("creative");
+  const [freshMode, setFreshMode] = useState(false);
   const [output, setOutput] = useState("");
   const [history, setHistory] = useState([]);
   const [copyState, setCopyState] = useState("idle");
@@ -610,7 +612,8 @@ function ManualPromptApp() {
       })
     );
     setSavedTrendSets(safeStorageGet(STORAGE_KEYS.savedTrendSets, []));
-    setPromptMode(safeStorageGet(STORAGE_KEYS.promptMode, "creative"));   
+    setPromptMode(safeStorageGet(STORAGE_KEYS.promptMode, "creative"));
+    setFreshMode(safeStorageGet(STORAGE_KEYS.freshMode, false));
   }, []);
 
   useEffect(() => {
@@ -628,6 +631,10 @@ function ManualPromptApp() {
   useEffect(() => {
     safeStorageSet(STORAGE_KEYS.promptMode, promptMode);
   }, [promptMode]);
+
+  useEffect(() => {
+    safeStorageSet(STORAGE_KEYS.freshMode, freshMode);
+  }, [freshMode]);
 
   const mergedOptionGroups = useMemo(() => mergeOptions(OPTION_GROUPS, importedOptions), [importedOptions]);
   const selectedCount = useMemo(() => countSelected(selection), [selection]);
@@ -735,49 +742,54 @@ const generatePrompt = () => {
     if (item) picked[key] = item;
   }
 
-  const isStandard = promptMode === "standard";
-
-  const parts = [
+  const standardParts = [
     "A naturally beautiful woman",
-
-    picked.season ? `in ${picked.season.en},` : "",
+    picked.season ? `in ${picked.season.en}` : "",
     picked.hair?.en,
     picked.makeup?.en,
     picked.wear?.en,
     picked.accessory?.en,
     picked.pose?.en,
     picked.background?.en,
-
-    // ▼ここが分岐
-    isStandard
-      ? "natural, realistic, clean fashion photography"
-      : picked.mood?.en,
-
-    isStandard
-      ? "soft natural lighting"
-      : picked.lighting?.en,
-
-    isStandard
-      ? "shot with a natural perspective lens"
-      : picked.camera?.en,
-
-    isStandard
-      ? ""
-      : picked.style?.en,
-
-    // ▼ここも分岐
-    isStandard
-      ? "realistic, minimal composition"
-      : "highly detailed, elegant composition, cinematic fashion photography",
+    picked.mood?.en,
+    picked.lighting?.en,
+    "natural, realistic, clean fashion photography",
   ].filter(Boolean);
 
-  const videoHint = VIDEO_HINTS[picked.pose?.id] || VIDEO_HINTS.default;
+  const creativeParts = [
+    "A naturally beautiful woman portrayed with refined realism and emotional subtlety.",
+    picked.season ? `Set in ${picked.season.en},` : "",
+    picked.hair?.en,
+    picked.makeup?.en,
+    picked.wear?.en,
+    picked.accessory?.en,
+    picked.pose?.en,
+    picked.background?.en,
+    picked.mood?.en,
+    picked.lighting?.en,
+    picked.camera?.en,
+    picked.style?.en,
+    "highly detailed, elegant composition, realistic texture, graceful atmosphere, cinematic fashion photography",
+  ].filter(Boolean);
 
-  const prompt = `${parts.join(", ")}.\n\n--video_hint: ${videoHint}`;
+  const freshParts = freshMode
+    ? [
+        "fresh, natural, and effortlessly radiant",
+        "dewy luminous skin with a fresh glow",
+        "soft natural hair with airy movement",
+        "gentle natural movement in a light breeze",
+        "clear spring daylight with soft natural highlights",
+        "unposed, light, and graceful presence",
+      ]
+    : [];
+
+  const videoHint = VIDEO_HINTS[picked.pose?.id] || VIDEO_HINTS.default;
+  const baseParts = promptMode === "standard" ? standardParts : creativeParts;
+  const promptBody = [...baseParts, ...freshParts].filter(Boolean).join(", ");
+  const prompt = `${promptBody}.\n\n--video_hint: ${videoHint}`;
 
   setOutput(prompt);
   setCopyState("idle");
-
   saveEntry({
     id: createId(),
     createdAt: new Date().toLocaleString("ja-JP"),
@@ -828,16 +840,20 @@ const generatePrompt = () => {
               <Badge variant="secondary">動画ヒント自動付与</Badge>
               <Badge variant="secondary">履歴保存</Badge>
             </div>
-            <div className="flex flex-wrap items-center gap-2 pt-3">
-              <div className="text-sm font-medium text-zinc-700">プロンプトモード</div>
-              <SelectionChip active={promptMode === "standard"} onClick={() => setPromptMode("standard")}>
-                Standard
-              </SelectionChip>
-              <SelectionChip active={promptMode === "creative"} onClick={() => setPromptMode("creative")}>
-                Creative
-               </SelectionChip>
-               <Badge>{promptMode === "standard" ? "Gemini安定" : "詩的表現"}</Badge>
-           </div>
+           <div className="flex flex-wrap items-center gap-2 pt-3">
+             <div className="text-sm font-medium text-zinc-700">プロンプトモード</div>
+            <SelectionChip active={promptMode === "standard"} onClick={() => setPromptMode("standard")}>
+             Standard
+            </SelectionChip>
+            <SelectionChip active={promptMode === "creative"} onClick={() => setPromptMode("creative")}>
+             Creative
+            </SelectionChip>
+            <SelectionChip active={freshMode} onClick={() => setFreshMode((prev) => !prev)}>
+             Fresh
+            </SelectionChip>
+            <Badge>{promptMode === "standard" ? "Gemini安定" : "詩的表現"}</Badge>
+            {freshMode ? <Badge>みずみずしさ強化</Badge> : null}
+          </div>
           </CardHeader>
           <CardContent className="space-y-8">
             <section className="space-y-3 rounded-2xl bg-zinc-50 p-4">
