@@ -28,6 +28,7 @@ const STORAGE_KEYS = {
   activeTab: "prompt-generator-active-tab-v2",
   importedTrendOptions: "prompt-generator-imported-trend-options-v1",
   savedTrendSets: "prompt-generator-saved-trend-sets-v1",
+  promptMode: "prompt-generator-prompt-mode-v1",
 };
 
 const OPTION_GROUPS = {
@@ -267,14 +268,55 @@ function randomCompatibleSelection() {
   return next;
 }
 
-function buildPrompt(selection) {
+function simplifyCameraText(cameraText) {
+  if (!cameraText) return "";
+  if (cameraText.includes("85mm portrait lens")) {
+    return "shot on a full-frame mirrorless camera, 85mm portrait lens, natural depth, soft background blur";
+  }
+  if (cameraText.includes("35mm lens")) {
+    return "shot with a 35mm lens, natural perspective, realistic environmental portrait";
+  }
+  if (cameraText.includes("135mm telephoto lens")) {
+    return "shot with a 135mm telephoto lens, elegant separation, realistic background compression";
+  }
+  return cameraText;
+}
+
+function simplifyStyleText(styleText) {
+  if (!styleText) return "";
+  if (styleText.includes("meditative atmosphere")) {
+    return "a calm, meditative atmosphere";
+  }
+  if (styleText.includes("fleeting cinematic moment")) {
+    return "captured in a cinematic moment with quiet stillness";
+  }
+  return styleText;
+}
+
+function buildPrompt(selection, mode = "creative") {
   const picked = {};
   for (const key of GROUP_ORDER) {
     const item = OPTION_GROUPS[key].options.find((o) => o.id === selection[key]);
     if (item) picked[key] = item;
   }
 
-  const parts = [
+  const standardParts = [
+    "A naturally beautiful woman",
+    picked.season ? `in ${picked.season.en}` : "",
+    picked.hair?.en,
+    picked.makeup?.en,
+    picked.wear?.en,
+    picked.accessory?.en,
+    picked.pose?.en,
+    picked.background?.en,
+    picked.mood?.en,
+    picked.lighting?.en,
+    simplifyCameraText(picked.camera?.en),
+    simplifyStyleText(picked.style?.en),
+    "realistic, highly detailed fashion photography",
+  ].filter(Boolean);
+
+  const creativeParts = [
     "A naturally beautiful woman portrayed with refined realism and emotional subtlety.",
     picked.season ? `Set in ${picked.season.en},` : "",
     picked.hair?.en,
@@ -285,13 +327,14 @@ function buildPrompt(selection) {
     picked.background?.en,
     picked.mood?.en,
     picked.lighting?.en,
-        picked.camera?.en,
-        picked.style?.en,
+    picked.camera?.en,
+    picked.style?.en,
     "highly detailed, elegant composition, realistic texture, graceful atmosphere, cinematic fashion photography",
   ].filter(Boolean);
 
   const videoHint = VIDEO_HINTS[picked.pose?.id] || VIDEO_HINTS.default;
-  return `${parts.join(", ")}.\n\n--video_hint: ${videoHint}`;
+  const promptBody = mode === "standard" ? standardParts.join(", ") : creativeParts.join(", ");
+  return `${promptBody}.\n\n--video_hint: ${videoHint}`;
 }
 
 function detectSeasonFromKeyword(keyword) {
@@ -390,7 +433,10 @@ function runSelfTests() {
     failures.push("compatibleOptions should filter seasonal backgrounds");
   }
 
-  const prompt = buildPrompt({ season: "spring", pose: "walking", mood: "poetic", camera: "portrait-85", style: "editorial" });
+  const prompt = buildPrompt(
+  { season: "spring", pose: "walking", mood: "poetic", camera: "portrait-85", style: "editorial" },
+  "creative"
+);
   if (!prompt.includes("--video_hint:") || !prompt.includes("Set in spring")) {
     failures.push("buildPrompt should include season and video hint");
   }
@@ -545,6 +591,7 @@ function ManualPromptApp() {
   const [importStatus, setImportStatus] = useState("idle");
   const [savedTrendSets, setSavedTrendSets] = useState([]);
   const [trendSetName, setTrendSetName] = useState("");
+  const [promptMode, setPromptMode] = useState("creative");
   const [output, setOutput] = useState("");
   const [history, setHistory] = useState([]);
   const [copyState, setCopyState] = useState("idle");
@@ -563,6 +610,7 @@ function ManualPromptApp() {
       })
     );
     setSavedTrendSets(safeStorageGet(STORAGE_KEYS.savedTrendSets, []));
+    setPromptMode(safeStorageGet(STORAGE_KEYS.promptMode, "creative"));   
   }, []);
 
   useEffect(() => {
@@ -576,6 +624,10 @@ function ManualPromptApp() {
   useEffect(() => {
     safeStorageSet(STORAGE_KEYS.savedTrendSets, savedTrendSets);
   }, [savedTrendSets]);
+
+  useEffect(() => {
+    safeStorageSet(STORAGE_KEYS.promptMode, promptMode);
+  }, [promptMode]);
 
   const mergedOptionGroups = useMemo(() => mergeOptions(OPTION_GROUPS, importedOptions), [importedOptions]);
   const selectedCount = useMemo(() => countSelected(selection), [selection]);
@@ -676,37 +728,58 @@ function ManualPromptApp() {
 
   const saveEntry = (entry) => setHistory((prev) => [entry, ...prev].slice(0, 20));
 
-  const generatePrompt = () => {
-    const prompt = (() => {
-      const picked = {};
-      for (const key of GROUP_ORDER) {
-        const item = mergedOptionGroups[key].options.find((o) => o.id === selection[key]);
-        if (item) picked[key] = item;
-      }
-      const parts = [
-        "A naturally beautiful woman portrayed with refined realism and emotional subtlety.",
-        picked.season ? `Set in ${picked.season.en},` : "",
-        picked.hair?.en,
-        picked.makeup?.en,
-        picked.wear?.en,
-        picked.accessory?.en,
-        picked.pose?.en,
-        picked.background?.en,
-        picked.mood?.en,
-        picked.lighting?.en,
-        picked.camera?.en,
-        picked.style?.en,
-        "highly detailed, elegant composition, realistic texture, graceful atmosphere, cinematic fashion photography",
-      ].filter(Boolean);
-      const videoHint = VIDEO_HINTS[picked.pose?.id] || VIDEO_HINTS.default;
-      return `${parts.join(", ")}.
+ const generatePrompt = () => {
+  const picked = {};
+  for (const key of GROUP_ORDER) {
+    const item = mergedOptionGroups[key].options.find((o) => o.id === selection[key]);
+    if (item) picked[key] = item;
+  }
 
---video_hint: ${videoHint}`;
-    })();
-    setOutput(prompt);
-    setCopyState("idle");
-    saveEntry({ id: createId(), createdAt: new Date().toLocaleString("ja-JP"), selection, prompt });
-  };
+  const standardParts = [
+    "A naturally beautiful woman",
+    picked.season ? `in ${picked.season.en}` : "",
+    picked.hair?.en,
+    picked.makeup?.en,
+    picked.wear?.en,
+    picked.accessory?.en,
+    picked.pose?.en,
+    picked.background?.en,
+    picked.mood?.en,
+    picked.lighting?.en,
+    simplifyCameraText(picked.camera?.en),
+    simplifyStyleText(picked.style?.en),
+    "realistic, highly detailed fashion photography",
+  ].filter(Boolean);
+
+  const creativeParts = [
+    "A naturally beautiful woman portrayed with refined realism and emotional subtlety.",
+    picked.season ? `Set in ${picked.season.en},` : "",
+    picked.hair?.en,
+    picked.makeup?.en,
+    picked.wear?.en,
+    picked.accessory?.en,
+    picked.pose?.en,
+    picked.background?.en,
+    picked.mood?.en,
+    picked.lighting?.en,
+    picked.camera?.en,
+    picked.style?.en,
+    "highly detailed, elegant composition, realistic texture, graceful atmosphere, cinematic fashion photography",
+  ].filter(Boolean);
+
+  const videoHint = VIDEO_HINTS[picked.pose?.id] || VIDEO_HINTS.default;
+  const promptBody = promptMode === "standard" ? standardParts.join(", ") : creativeParts.join(", ");
+  const prompt = `${promptBody}.\n\n--video_hint: ${videoHint}`;
+
+  setOutput(prompt);
+  setCopyState("idle");
+  saveEntry({
+    id: createId(),
+    createdAt: new Date().toLocaleString("ja-JP"),
+    selection,
+    prompt,
+  });
+};
 
   const randomizeAll = () => {
     const next = randomCompatibleSelection();
@@ -750,6 +823,16 @@ function ManualPromptApp() {
               <Badge variant="secondary">動画ヒント自動付与</Badge>
               <Badge variant="secondary">履歴保存</Badge>
             </div>
+            <div className="flex flex-wrap items-center gap-2 pt-3">
+              <div className="text-sm font-medium text-zinc-700">プロンプトモード</div>
+              <SelectionChip active={promptMode === "standard"} onClick={() => setPromptMode("standard")}>
+                Standard
+              </SelectionChip>
+              <SelectionChip active={promptMode === "creative"} onClick={() => setPromptMode("creative")}>
+                Creative
+               </SelectionChip>
+               <Badge>{promptMode === "standard" ? "Gemini安定" : "詩的表現"}</Badge>
+           </div>
           </CardHeader>
           <CardContent className="space-y-8">
             <section className="space-y-3 rounded-2xl bg-zinc-50 p-4">
